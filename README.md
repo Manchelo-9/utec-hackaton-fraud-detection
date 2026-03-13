@@ -48,15 +48,15 @@ This will:
 
 ```
 ├── main.py                        # Entry point — runs the full pipeline
-├── first_glance_model.py          # Original single-file version (reference)
-├── fraud_detection/               # Modular package
-│   ├── __init__.py
+├── baseline_model.py              # Original single-file version (reference)
+├── fraud_detection/               # Core package
+│   ├── __init__.py                # Public API and module docs
 │   ├── config.py                  # Paths, hyperparameters, feature settings
-│   ├── data_loader.py             # Load and merge CSVs, memory reduction
-│   ├── features.py                # Feature engineering and train/val split
+│   ├── data_loader.py             # Dataset ingestion, merging, memory optimization
+│   ├── features.py                # Feature engineering and chronological split
 │   ├── models.py                  # LightGBM, XGBoost, Random Forest, ensemble
 │   ├── visualization.py           # Evaluation plots (ROC, PR, confusion, etc.)
-│   └── submission.py              # Save submission CSVs
+│   └── submission.py              # Export Kaggle submission CSVs
 ├── data/                          # Dataset CSVs (not tracked in git)
 ├── output/                        # Generated submissions and plots (not tracked)
 │   └── plots/                     # ROC curves, confusion matrices, etc.
