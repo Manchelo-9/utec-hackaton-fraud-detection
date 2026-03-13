@@ -1,0 +1,23 @@
+# Data files (too large for git)
+data/
+dataset*/
+*.zip
+
+# Virtual environment
+hack_venv/
+
+# Output/submissions
+output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
