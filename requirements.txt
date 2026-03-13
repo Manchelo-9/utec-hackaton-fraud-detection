@@ -3,3 +3,4 @@ numpy
 lightgbm
 xgboost
 scikit-learn
+matplotlib

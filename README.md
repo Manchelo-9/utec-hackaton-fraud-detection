@@ -15,7 +15,7 @@ source venv/bin/activate
 ### 2. Install dependencies
 
 ```bash
-pip install pandas numpy lightgbm xgboost scikit-learn
+pip install -r requirements.txt
 ```
 
 ### 3. Download the dataset
@@ -34,31 +34,47 @@ data/
 ## Usage
 
 ```bash
-python first_glance_model.py
+python main.py
 ```
 
 This will:
 1. Load and merge transaction + identity data
 2. Engineer features (UID, frequency encoding, group aggregations, time features)
 3. Train three models with time-based validation (80/20 split)
-4. Save individual and ensemble submissions to `output/`
-
-## Output
-
-| File | Description |
-|------|-------------|
-| `submission_lightgbm.csv` | LightGBM predictions |
-| `submission_xgboost.csv` | XGBoost predictions |
-| `submission_randomforest.csv` | Random Forest predictions |
-| `submission_ensemble.csv` | Weighted ensemble (primary submission) |
+4. Generate evaluation plots to `output/plots/`
+5. Save individual and ensemble submissions to `output/`
 
 ## Project Structure
 
 ```
-├── first_glance_model.py   # Main training script
-├── data/                   # Dataset CSVs (not tracked in git)
-└── output/                 # Generated submissions (not tracked in git)
+├── main.py                        # Entry point — runs the full pipeline
+├── first_glance_model.py          # Original single-file version (reference)
+├── fraud_detection/               # Modular package
+│   ├── __init__.py
+│   ├── config.py                  # Paths, hyperparameters, feature settings
+│   ├── data_loader.py             # Load and merge CSVs, memory reduction
+│   ├── features.py                # Feature engineering and train/val split
+│   ├── models.py                  # LightGBM, XGBoost, Random Forest, ensemble
+│   ├── visualization.py           # Evaluation plots (ROC, PR, confusion, etc.)
+│   └── submission.py              # Save submission CSVs
+├── data/                          # Dataset CSVs (not tracked in git)
+├── output/                        # Generated submissions and plots (not tracked)
+│   └── plots/                     # ROC curves, confusion matrices, etc.
+└── requirements.txt
 ```
+
+## Evaluation Plots
+
+After running the pipeline, the following plots are generated in `output/plots/`:
+
+| Plot | Description |
+|------|-------------|
+| `roc_curves.png` | ROC curves for all models + ensemble |
+| `precision_recall.png` | Precision-Recall curves |
+| `confusion_matrices.png` | Side-by-side confusion matrices |
+| `prediction_distributions.png` | Fraud vs legit probability distributions |
+| `model_comparison.png` | Bar chart comparing validation AUC |
+| `feature_importance_*.png` | Top-20 features per model |
 
 ## Team
 
