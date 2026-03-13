@@ -13,14 +13,16 @@ def reduce_mem_usage(df: pd.DataFrame, verbose: bool = True) -> pd.DataFrame:
     start_mem = df.memory_usage().sum() / 1024**2
     for col in df.columns:
         dtype = df[col].dtype
-        if np.issubdtype(dtype, np.integer):
+        if not hasattr(dtype, "kind"):
+            continue
+        if dtype.kind == "i" or dtype.kind == "u":
             c_min, c_max = df[col].min(), df[col].max()
             for candidate in [np.int8, np.int16, np.int32]:
                 info = np.iinfo(candidate)
                 if c_min >= info.min and c_max <= info.max:
                     df[col] = df[col].astype(candidate)
                     break
-        elif np.issubdtype(dtype, np.floating):
+        elif dtype.kind == "f":
             c_min, c_max = df[col].min(), df[col].max()
             finfo = np.finfo(np.float32)
             if c_min >= finfo.min and c_max <= finfo.max:
