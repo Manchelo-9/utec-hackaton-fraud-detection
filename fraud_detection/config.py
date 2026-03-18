@@ -9,7 +9,8 @@ PLOTS_DIR = OUTPUT_DIR / "plots"
 
 # ── General ──────────────────────────────────────────────────────────────
 RANDOM_SEED = 42
-TRAIN_SPLIT_RATIO = 0.80
+TEST_SIZE = 0.20
+NA_THRESHOLD = 0.20
 MAX_BOOST_ROUNDS = 5000
 EARLY_STOPPING_ROUNDS = 100
 
@@ -57,4 +58,5 @@ FREQ_ENCODE_COLS = [
 AGG_COLS = ["TransactionAmt", "D9", "D15"]
 AGG_STATS = ["mean", "std"]
 DROP_COLS = ["isFraud", "TransactionID", "TransactionDT"]
+IDENTITY_MARKER_COL = "id_01"
 SECONDS_PER_HOUR = 3600

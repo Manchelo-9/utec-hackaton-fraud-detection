@@ -4,3 +4,4 @@ lightgbm
 xgboost
 scikit-learn
 matplotlib
+statsmodels

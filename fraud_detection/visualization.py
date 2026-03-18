@@ -1,12 +1,127 @@
 """Evaluation plots: ROC curves, confusion matrix, feature importance,
-prediction distributions, and model comparison."""
+prediction distributions, model comparison, correlation heatmap, and VIF."""
 
 import numpy as np
+import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.metrics import (ConfusionMatrixDisplay, RocCurveDisplay,
                              precision_recall_curve, roc_auc_score)
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+
+# ── NA visualizations ───────────────────────────────────────────────────
+
+
+def plot_na_bar(df: pd.DataFrame, title: str = "Missing Values by Column",
+                top_n: int = 50, save_path=None):
+    """Horizontal bar chart of NA percentage per column (top *top_n*)."""
+    na_pct = (df.isnull().sum() / len(df) * 100).sort_values(ascending=False)
+    na_pct = na_pct[na_pct > 0].head(top_n)
+
+    if na_pct.empty:
+        print(f"  {title}: no missing values found — skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, max(6, len(na_pct) * 0.3)))
+    colors = ["#e74c3c" if v > 50 else "#f39c12" if v > 20 else "#2ecc71"
+              for v in na_pct.values]
+    na_pct.plot.barh(ax=ax, color=colors)
+    ax.axvline(x=50, color="red", linestyle="--", alpha=0.6, label="50 % threshold")
+    ax.set_xlabel("Missing (%)")
+    ax.set_title(title)
+    ax.invert_yaxis()
+    ax.legend()
+    ax.grid(axis="x", alpha=0.3)
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"  Saved: {save_path}")
+    plt.close(fig)
+
+
+def plot_na_heatmap(df: pd.DataFrame, title: str = "NA Heatmap",
+                    sample_n: int = 500, save_path=None):
+    """Binary heatmap of missingness (rows × columns).
+
+    Samples *sample_n* rows for readability.  Colored = NA, white = present.
+    """
+    sample = df.sample(n=min(sample_n, len(df)), random_state=42)
+    na_matrix = sample.isnull()
+
+    # Sort columns so high-NA ones cluster to the right
+    col_order = na_matrix.sum().sort_values().index
+    na_matrix = na_matrix[col_order]
+
+    fig, ax = plt.subplots(figsize=(max(14, len(df.columns) * 0.06), 6))
+    ax.imshow(na_matrix.values, aspect="auto", cmap="Reds", interpolation="nearest")
+    ax.set_title(f"{title}  ({len(sample)} sampled rows × {len(df.columns)} columns)")
+    ax.set_ylabel("Rows")
+    ax.set_xlabel("Columns (sorted by NA count →)")
+
+    # Show a few column labels
+    n_cols = len(col_order)
+    tick_step = max(1, n_cols // 20)
+    ax.set_xticks(range(0, n_cols, tick_step))
+    ax.set_xticklabels([col_order[i] for i in range(0, n_cols, tick_step)],
+                       rotation=90, fontsize=6)
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"  Saved: {save_path}")
+    plt.close(fig)
+
+
+def plot_na_treatment_summary(df_before: pd.DataFrame, df_after: pd.DataFrame,
+                              df_after_imputed: pd.DataFrame,
+                              save_path=None):
+    """Three-panel comparison showing NA counts at each pipeline stage.
+
+    Panels:
+      1. Raw data (after load)
+      2. After cleaning + feature engineering (NaN preserved for LGB/XGB)
+      3. After median imputation (for RandomForest)
+    """
+    stages = {
+        "1. Raw (after load)": df_before,
+        "2. After cleaning + FE\n(LGB / XGB input)": df_after,
+        "3. After imputation\n(RF input)": df_after_imputed,
+    }
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    for ax, (label, df) in zip(axes, stages.items()):
+        na_total = int(df.isnull().sum().sum())
+        na_cols = int((df.isnull().sum() > 0).sum())
+        na_pct = df.isnull().sum().sum() / df.size * 100
+
+        # Top-10 NA columns as a mini bar
+        top = (df.isnull().sum() / len(df) * 100).sort_values(ascending=False).head(10)
+        top = top[top > 0]
+        if top.empty:
+            ax.text(0.5, 0.5, "No NAs", ha="center", va="center",
+                    fontsize=16, fontweight="bold", color="#2ecc71",
+                    transform=ax.transAxes)
+        else:
+            top.plot.barh(ax=ax, color="#e74c3c", alpha=0.8)
+            ax.invert_yaxis()
+            ax.set_xlabel("Missing (%)")
+
+        ax.set_title(f"{label}\n"
+                     f"{df.shape[0]:,} rows × {df.shape[1]} cols\n"
+                     f"NA cells: {na_total:,} ({na_pct:.2f}%) — {na_cols} cols w/ NA",
+                     fontsize=9)
+        ax.grid(axis="x", alpha=0.3)
+
+    fig.suptitle("NA Treatment Pipeline — Before & After", fontsize=13, fontweight="bold")
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"  Saved: {save_path}")
+    plt.close(fig)
+
+
+# ── Evaluation plots ────────────────────────────────────────────────────
 
 
 def plot_roc_curves(y_val, val_preds: dict, ensemble_val, save_path=None):
@@ -145,8 +260,77 @@ def plot_model_comparison(aucs: dict, save_path=None):
     plt.close(fig)
 
 
-def generate_all_plots(y_val, val_preds, ensemble_val, aucs, models, plots_dir):
-    """Generate and save all evaluation plots."""
+def plot_correlation_matrix(X: pd.DataFrame, top_n: int = 40, save_path=None):
+    """Heatmap of the Pearson correlation matrix for the *top_n* columns
+    (selected by highest variance to keep it readable)."""
+    # Pick top-N by variance so the plot isn't 200×200
+    variances = X.var().sort_values(ascending=False)
+    cols = variances.head(top_n).index.tolist()
+    corr = X[cols].corr()
+
+    fig, ax = plt.subplots(figsize=(max(12, top_n * 0.4), max(10, top_n * 0.35)))
+    cax = ax.matshow(corr, cmap="RdBu_r", vmin=-1, vmax=1)
+    fig.colorbar(cax, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_xticks(range(len(cols)))
+    ax.set_yticks(range(len(cols)))
+    ax.set_xticklabels(cols, rotation=90, fontsize=7)
+    ax.set_yticklabels(cols, fontsize=7)
+    ax.set_title(f"Correlation Matrix — Top {top_n} Features (by variance)", pad=20)
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"  Saved: {save_path}")
+    plt.close(fig)
+
+
+def plot_vif(X: pd.DataFrame, top_n: int = 30, sample_n: int = 10_000,
+             save_path=None):
+    """Compute and plot Variance Inflation Factors for the *top_n* features.
+
+    Uses a sample of *sample_n* rows and drops NaN before computation
+    to keep runtime reasonable on large datasets.
+    """
+    # Sample and drop NaN
+    Xs = X.sample(n=min(sample_n, len(X)), random_state=42).dropna(axis=1)
+
+    # Pick top_n by variance (VIF on 200+ cols is very slow)
+    variances = Xs.var().sort_values(ascending=False)
+    cols = variances.head(top_n).index.tolist()
+    Xs = Xs[cols].copy()
+
+    # Drop any constant columns (VIF undefined)
+    Xs = Xs.loc[:, Xs.nunique() > 1]
+
+    print(f"  Computing VIF for {Xs.shape[1]} features on {len(Xs)} sampled rows...")
+    vif_data = pd.DataFrame({
+        "feature": Xs.columns,
+        "VIF": [variance_inflation_factor(Xs.values, i) for i in range(Xs.shape[1])],
+    }).sort_values("VIF", ascending=True)
+
+    fig, ax = plt.subplots(figsize=(8, max(6, len(vif_data) * 0.3)))
+    colors = ["#e74c3c" if v > 10 else "#f39c12" if v > 5 else "#2ecc71"
+              for v in vif_data["VIF"]]
+    ax.barh(vif_data["feature"], vif_data["VIF"], color=colors)
+    ax.axvline(x=5, color="orange", linestyle="--", alpha=0.7, label="VIF = 5")
+    ax.axvline(x=10, color="red", linestyle="--", alpha=0.7, label="VIF = 10")
+    ax.set_xlabel("Variance Inflation Factor")
+    ax.set_title(f"VIF — Top {len(vif_data)} Features")
+    ax.legend()
+    ax.grid(axis="x", alpha=0.3)
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"  Saved: {save_path}")
+    plt.close(fig)
+    return vif_data
+
+
+def generate_all_plots(y_val, val_preds, ensemble_val, aucs, models, plots_dir,
+                       X_train=None):
+    """Generate and save all evaluation plots.
+
+    If *X_train* is provided, also generates the correlation heatmap and VIF chart.
+    """
     plots_dir.mkdir(parents=True, exist_ok=True)
     print("\nGenerating evaluation plots...")
 
@@ -167,5 +351,10 @@ def generate_all_plots(y_val, val_preds, ensemble_val, aucs, models, plots_dir):
     for name, model in models.items():
         plot_feature_importance(model, name,
                                 save_path=plots_dir / f"feature_importance_{name}.png")
+
+    if X_train is not None:
+        plot_correlation_matrix(X_train,
+                                save_path=plots_dir / "correlation_matrix.png")
+        plot_vif(X_train, save_path=plots_dir / "vif.png")
 
     print("All plots saved.\n")
